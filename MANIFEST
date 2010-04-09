@@ -1,0 +1,12 @@
+.cvsignore
+Build.PL
+Changes
+lib/Test/Rest.pm
+lib/Test/Rest/Commands.pm
+lib/Test/Rest/Context.pm
+MANIFEST			This list of files
+MANIFEST.SKIP
+README
+t/00-load.t
+Makefile.PL
+META.yml
