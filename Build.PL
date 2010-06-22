@@ -9,7 +9,7 @@ my $builder = Module::Build->new(
     dist_version_from   => 'lib/Test/Rest.pm',
     build_requires => {
         'Test::More' => '0.94',
-        'Test::Mock::LWP' => '0.05',
+        'Test::MockObject' => '1.09',
     },
     requires => {
           'URI' => '1.40',

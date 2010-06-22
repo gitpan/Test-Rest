@@ -1,6 +1,6 @@
 ---
 name: Test-Rest
-version: 0.01
+version: 0.02
 author:
   - 'Keith Grennan <kgrennan@cpan.org>'
 abstract: Declarative test framework for RESTful web services
@@ -8,7 +8,7 @@ license: perl
 resources:
   license: http://dev.perl.org/licenses/
 build_requires:
-  Test::Mock::LWP: 0.05
+  Test::MockObject: 1.09
   Test::More: 0.94
 requires:
   Class::Accessor: 0.31
@@ -23,7 +23,7 @@ configure_requires:
 provides:
   Test::Rest:
     file: lib/Test/Rest.pm
-    version: 0.01
+    version: 0.02
   Test::Rest::Commands:
     file: lib/Test/Rest/Commands.pm
   Test::Rest::Context:

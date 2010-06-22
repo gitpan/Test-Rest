@@ -1,6 +1,6 @@
 package Test::Rest;
-use warnings;
 use strict;
+use warnings;
 use Carp;
 use XML::LibXML;
 use Test::Rest::Commands;
@@ -8,7 +8,7 @@ use Test::Rest::Context;
 use URI;
 use Test::More;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 =head1 NAME
 
@@ -26,7 +26,7 @@ This module is very experimental/alpha and will likely change.  It's not super u
     # ./tests/01-authentication.xml
     # ./tests/02-create-a-foobar.xml
     # ./tests/03-delete-a-foobar.xml
-    my $tests = Test::Rest->new(dir => 'tests', base_url => 'http://webservice.example.com/');
+    my $tests = Test::Rest->new(dir => 'tests', base => 'http://webservice.example.com/');
     $tests->run;
 
 =head1 DESCRIPTION
@@ -35,32 +35,32 @@ The idea here is to write tests against REST services in a data-driven, declarat
 
 Here is an example test description file:
 
-    <tests>
-      <get>api/login</get>
-      <submit_form>
-        <with_fields>
-          <name>admin</name>
-          <pass>admin</pass>
-        </with_fields>
-      </submit_form>
-      <is the="[% response.code %]">200</is> 
-      <set name="random">[% c.random %]</set>
-      <set name="mail">test+[% random %]@example.com</set>
-      <set name="pass">[% random %]</set>
-      <post url="rest/user">
-        <Content>
-          <user>
-            <firstname>Testy</firstname>
-            <lastname>McTester</lastname>
-            <mail>[% mail %]</mail>
-            <pass>[% pass %]</pass>
-          </user>
-        </Content>
-      </post>
-      <is the="[% response.code %]">200</is> 
-      <set name="uid" xpath="id"/>
-      <diag>Created a user with ID [% uid %]</diag>
-    </tests>
+  <tests>
+    <get>user/login</get>
+    <submit_form>
+      <with_fields>
+        <name>admin</name>
+        <pass>admin</pass>
+      </with_fields>
+    </submit_form>
+    <is the="$response.code">200</is> 
+    <set name="random" value="$c.random"/>
+    <set name="mail" value="test+[% random %]@example.com"/>
+    <set name="pass" value="$random"/>
+    <post to="rest/user">
+      <Content>
+        <user>
+          <firstname>Testy</firstname>
+          <lastname>McTester</lastname>
+          <mail>[% mail %]</mail>
+          <pass>[% pass %]</pass>
+        </user>
+      </Content>
+    </post>
+    <is the="$response.code">200</is> 
+    <set name="uid" value="#id"/>
+    <diag>Created [% uid %]</diag>
+  </tests>
 
 =over
 
@@ -80,7 +80,7 @@ The default user agent is L<WWW::Mechanize>.  Cookies/sessions are stored betwee
 
 =item * 
 
-The web service URLs given are relative paths and are automatically prefixed by the 'base_url' parameter given to new().
+The web service URLs given are relative paths and are automatically prefixed by the 'base' parameter given to new().
 
 =item * 
 
@@ -94,97 +94,7 @@ The most recent L<HTTP::Response> is stored in the stash via the key 'response'.
 
 =head1 COMMANDS
 
-=over
-
-=item get
-
-GETs a URL
-
-Attributes:
-
-=over
-
-=item * 
-
-url - the URL to get.  Relative URLs are automatically prefixed with 'base_url'
-
-=back
-
-=item post
-
-POSTs to a URL
-
-Attributes:
-
-=over
-
-=item url
-
-The URL
-
-=back
-
-Children:
-
-All of the children of the 'post' element are converted to a hash and fed to L<WWW::Mechanize>::post().
-
-The 'Content' element gets special treatment - its first child element is encoded back to XML, and that XML is sent as the content of the post.
-
-TODO: support other content types, including URL-encoded forms.
-
-=over
-
-=item Content
-
-The content to post.  Content-type may be supplied via the 'type' attribute.  Default content type is application/xml.
-
-=back
-
-=item set
-
-Sets a variable in the stash
-
-Attributes:
-
-=over
-
-=item name
-
-Name of the variable
-
-=item xpath
-
-If set, the value of the variable is the first result of the XPath expression given, and the text content of the 'set' element is ignored.
-
-=back
-
-Children:
-
-The text content of the 'set' element is the value of the variable (unless the xpath attribute is set).
-
-=item submit_form
-
-Submits a form (see WWW::Mechanize::submit_form())
-
-Children:
-
-All the child nodes of the submit_form element are converted to a hash and fed to L<WWW::Mechanize>::submit_form()
-
-=head1 FUNCTIONS
-
-=head2 my $tests = Test::Rest->new(%params)
-
-Create a new Test::Rest object
-
-Parameters:
-
-=over
-
-=item * dir - directory to scan for test files
-
-=item * base_url - the base URL of the web service - should end in / 
-
-=back
+TODO
 
 =cut
 
@@ -195,7 +105,7 @@ sub new {
   return bless \%opts, $class;
 }
 
-=head2 $tests->run
+=head2 $tests->run_dir($dir)
 
 Scan directory for test description files and run them.
 
@@ -205,37 +115,23 @@ sub run {
   my $self = shift;
   croak 'Parameter "base_url" required' unless defined $self->{base_url};
   $self->{base_url} = URI->new($self->{base_url});
-  my $dir = $self->{dir};
-  croak 'Parameter "dir" required' unless defined $dir;
-  croak 'Directory "dir" not found' unless -d $dir;
-  opendir(my $dh, $dir) || croak "can't opendir $dir: $!";
-  while (my $t = readdir($dh)) {
-    next if $t =~ /^\./ or !-f "$dir/$t";
-    $self->run_test_file("$dir/$t");
+  if (defined $self->{dir}) {
+    my $dir = $self->{dir};
+    croak "Directory $dir not found" unless -d $dir;
+    opendir(my $dh, $dir) || croak "can't opendir $dir: $!";
+    while (my $t = readdir($dh)) {
+      next if $t =~ /^\./ or !-f "$dir/$t";
+      $self->run_test_file("$dir/$t");
+    }
+    closedir $dh;
   }
-  closedir $dh;
+  elsif (defined $self->{files}) {
+    foreach (@{$self->{files}}) {
+      croak "$_ not found" unless -f $_;
+      $self->run_test_file($_);
+    }
+  }
   done_testing();
-}
-
-=head2 $tests->run_test_file($filename)
-
-Run a single test description file.
-
-=cut
-
-sub run_test_file {
-  my $self = shift;
-  my $filename = shift;
-  my $doc = XML::LibXML->load_xml(location => $filename);
-  my $commands = Test::Rest::Commands->new;
-  my $context = Test::Rest::Context->new(tests => $doc, base_url => $self->{base_url});
-  foreach my $child ($doc->documentElement->childNodes) {
-    next unless $child->nodeType == XML_ELEMENT_NODE;
-    my $cmd = $child->localname;
-    croak "Unsupported command '$cmd' in $filename" unless $commands->can($cmd);
-    $context->test($child);
-    $commands->$cmd($context);
-  }
 }
 
 =head1 AUTHOR

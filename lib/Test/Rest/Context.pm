@@ -49,10 +49,13 @@ sub expand_string {
 
 sub expand_url {
   my $self = shift;
-  my $string = shift;
-  my $url = $self->base_url->clone;
-  $url->path_query($string);
-  return $self->expand_string($url->as_string);
+  my $string = $self->expand_string(shift);
+  my $url = URI->new($string);
+  unless (defined $url->scheme and length $url->scheme) {
+    $url = $self->base_url->clone;
+    $url->path_query($string);
+  }
+  return $url->as_string;
 }
 
 sub random {

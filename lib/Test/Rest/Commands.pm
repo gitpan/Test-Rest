@@ -4,6 +4,7 @@ use warnings;
 use Test::More ();
 use XML::LibXML;
 use Data::Dumper;
+use Carp;
 
 sub new {
   my $proto = shift;
@@ -15,7 +16,17 @@ sub new {
 sub get {
   my $self = shift;
   my $c = shift;
+  if ($c->test->hasAttribute('check') and $c->test->getAttribute('check') =~ /^(0|false)$/misg) {
+    $c->ua->{autocheck} = 0;
+  }
   $c->add_response($c->ua->get($c->expand_url($c->test->textContent)));
+  $c->ua->{autocheck} = 1;
+}
+
+sub head {
+  my $self = shift;
+  my $c = shift;
+  $c->add_response($c->ua->head($c->expand_url($c->test->textContent)));
 }
 
 sub post {
@@ -32,17 +43,72 @@ sub post {
   $c->add_response($c->ua->post($url, %hash));
 }
 
+sub put {
+  my $self = shift;
+  my $c = shift;
+  my $url = $c->expand_url($c->test->getAttribute('to'));
+  my %hash;
+  _children_to_hash($c->test, \%hash);
+  my @node = $c->test->findnodes('Content');
+  if (@node and _has_child_elements($node[0])) {
+    $hash{Content} = $c->expand_string(_first_child_element($node[0])->toString);
+  }
+  $hash{'Content-Type'} ||= $node[0]->getAttribute('type') || 'application/xml';
+  $c->add_response($c->ua->put($url, %hash));
+}
+
+sub delete {
+  my $self = shift;
+  my $c = shift;
+  $c->add_response($c->ua->request(HTTP::Request->new('DELETE', $c->expand_url($c->test->textContent))));
+}
+
 sub is {
   my $self = shift;
   my $c = shift;
   my $value = '';
-  if ($c->test->hasAttribute('xpath')) {
-    $value = $self->_xpath($c, $c->test->getAttribute('xpath'));
+  if ($c->test->hasAttribute('the')) {
+    $value = $self->_expand_template($c, $c->test->getAttribute('the'));
   }
-  elsif ($c->test->hasAttribute('the')) {
-    $value = $c->expand_string($c->test->getAttribute('the'));
+  else {
+    croak "Nothing to test against";
   }
-  Test::More::is($value, $c->test->textContent);
+  
+  if ($c->test->hasAttribute('like')) {
+    Test::More::like($value, eval $c->test->getAttribute('like'));
+  }
+  elsif ($c->test->hasAttribute('equalto')) {
+    Test::More::is($value, $self->_expand_template($c, $c->test->getAttribute('equalto')));
+  }
+  else {
+    Test::More::is($value, $self->_expand_template($c, $c->test->textContent));    
+  }
+}
+
+sub like {
+  my $self = shift;
+  my $c = shift;
+  my $value = '';
+  if ($c->test->hasAttribute('the')) {
+    $value = $self->_expand_template($c, $c->test->getAttribute('the'));
+    Test::More::like($value, eval $c->test->textContent);
+  }
+}
+
+sub _expand_template {
+  my $self = shift;
+  my $c = shift;
+  my $t = shift;
+  if ($t =~ /^\$\w+(\.\w+)*$/) {
+    $t =~ s/^\$//;
+    return $c->expand_string("[% $t %]");
+  }
+  elsif ($t =~ s/^#//) {
+    return $self->_xpath($c, $t);
+  }
+  else {
+    return $c->expand_string($t);
+  }
 }
 
 sub submit_form {
@@ -57,11 +123,11 @@ sub set {
   my $self = shift;
   my $c = shift;
   my $value = '';
-  if ($c->test->hasAttribute('xpath')) {
-    $value = $self->_xpath($c, $c->test->getAttribute('xpath'));
+  if ($c->test->hasAttribute('value')) {
+    $value = $self->_expand_template($c, $c->test->getAttribute('value'));
   }
   else {
-    $value = $c->expand_string($c->test->textContent);
+    $value = $self->_expand_template($c, $c->test->textContent);
   }
   $c->stash->{$c->test->getAttribute('name')} = $value;
 }
