@@ -34,7 +34,7 @@ sub post {
   my $c = shift;
   my $url = $c->expand_url($c->test->getAttribute('to'));
   my %hash;
-  _children_to_hash($c->test, \%hash);
+  _children_to_hash($c, $c->test, \%hash);
   my @node = $c->test->findnodes('Content');
   if (@node and _has_child_elements($node[0])) {
     $hash{Content} = $c->expand_string(_first_child_element($node[0])->toString);
@@ -48,7 +48,7 @@ sub put {
   my $c = shift;
   my $url = $c->expand_url($c->test->getAttribute('to'));
   my %hash;
-  _children_to_hash($c->test, \%hash);
+  _children_to_hash($c, $c->test, \%hash);
   my @node = $c->test->findnodes('Content');
   if (@node and _has_child_elements($node[0])) {
     $hash{Content} = $c->expand_string(_first_child_element($node[0])->toString);
@@ -68,20 +68,20 @@ sub is {
   my $c = shift;
   my $value = '';
   if ($c->test->hasAttribute('the')) {
-    $value = $self->_expand_template($c, $c->test->getAttribute('the'));
+    $value = $c->expand_string($c->test->getAttribute('the'));
   }
   else {
     croak "Nothing to test against";
   }
   
   if ($c->test->hasAttribute('like')) {
-    Test::More::like($value, eval $c->test->getAttribute('like'));
+    Test::More::like($value, eval $c->expand_string($c->test->getAttribute('like')));
   }
   elsif ($c->test->hasAttribute('equalto')) {
-    Test::More::is($value, $self->_expand_template($c, $c->test->getAttribute('equalto')));
+    Test::More::is($value, $c->expand_string($c->test->getAttribute('equalto')));
   }
   else {
-    Test::More::is($value, $self->_expand_template($c, $c->test->textContent));    
+    Test::More::is($value, $c->expand_string($c->test->textContent));    
   }
 }
 
@@ -90,24 +90,8 @@ sub like {
   my $c = shift;
   my $value = '';
   if ($c->test->hasAttribute('the')) {
-    $value = $self->_expand_template($c, $c->test->getAttribute('the'));
+    $value = $c->expand_string($c->test->getAttribute('the'));
     Test::More::like($value, eval $c->test->textContent);
-  }
-}
-
-sub _expand_template {
-  my $self = shift;
-  my $c = shift;
-  my $t = shift;
-  if ($t =~ /^\$\w+(\.\w+)*$/) {
-    $t =~ s/^\$//;
-    return $c->expand_string("[% $t %]");
-  }
-  elsif ($t =~ s/^#//) {
-    return $self->_xpath($c, $t);
-  }
-  else {
-    return $c->expand_string($t);
   }
 }
 
@@ -115,8 +99,14 @@ sub submit_form {
   my $self = shift;
   my $c = shift;
   my %hash;
-  _children_to_hash($c->test, \%hash);
+  _children_to_hash($c, $c->test, \%hash);
   $c->add_response($c->ua->submit_form(%hash));
+}
+
+sub default {
+  my $self = shift;
+  my $c = shift;
+  $self->set($c) unless defined $c->stash->{$c->test->getAttribute('name')};
 }
 
 sub set {
@@ -124,10 +114,23 @@ sub set {
   my $c = shift;
   my $value = '';
   if ($c->test->hasAttribute('value')) {
-    $value = $self->_expand_template($c, $c->test->getAttribute('value'));
+    $value = $c->expand_string($c->test->getAttribute('value'));
   }
   else {
-    $value = $self->_expand_template($c, $c->test->textContent);
+    $value = $c->expand_string($c->test->textContent);
+  }
+  if ($c->test->hasAttribute('replace')) {
+    $_ = $value;
+    eval $c->test->getAttribute('replace');
+    die $@ if $@;
+#    Test::More::diag($c->test->getAttribute('filter') . ": $_");
+    $value = $_;
+  }
+  if ($c->test->hasAttribute('match')) {
+    $_ = $value;
+    eval $c->test->getAttribute('match') . "; \$value = \$1";
+    die $@ if $@;
+    #Test::More::diag($c->test->getAttribute('match') . ": $_");
   }
   $c->stash->{$c->test->getAttribute('name')} = $value;
 }
@@ -138,31 +141,22 @@ sub diag {
   Test::More::diag($c->expand_string($c->test->textContent));
 }
 
-sub _xpath {
-  my $self = shift;
-  my $c = shift;
-  my $xpath = shift;
-  my @node = defined($c->stash->{document}->documentElement) ?
-    $c->stash->{document}->documentElement->findnodes($xpath) : ();
-  if (@node) {
-    return $node[0]->nodeType == XML_ELEMENT_NODE ? $node[0]->textContent : $node[0]->nodeValue;
-  }
-  else {
-    return '';
-  }
-}
-
 sub _children_to_hash {
+  my $c = shift;
   my $node = shift;
   my $hash = shift;
   foreach my $child ($node->childNodes) {
     next unless $child->nodeType == XML_ELEMENT_NODE;
     if (_has_child_elements($child)) {
       $hash->{$child->localname} = {};
-      _children_to_hash($child, $hash->{$child->localname});
+      _children_to_hash($c, $child, $hash->{$child->localname});
     }
     else {
-      $hash->{$child->localname} = $child->textContent;
+      my $k = $child->localname;
+      if ($child->hasAttribute('name')) {
+        $k = $child->getAttribute('name');
+      }
+      $hash->{$k} = $c->expand_string($child->textContent);
     }
   }
 }

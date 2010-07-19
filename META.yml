@@ -1,6 +1,6 @@
 ---
 name: Test-Rest
-version: 0.02
+version: 0.03
 author:
   - 'Keith Grennan <kgrennan@cpan.org>'
 abstract: Declarative test framework for RESTful web services
@@ -23,7 +23,7 @@ configure_requires:
 provides:
   Test::Rest:
     file: lib/Test/Rest.pm
-    version: 0.02
+    version: 0.03
   Test::Rest::Commands:
     file: lib/Test/Rest/Commands.pm
   Test::Rest::Context:

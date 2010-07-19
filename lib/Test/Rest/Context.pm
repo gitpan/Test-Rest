@@ -7,6 +7,7 @@ use WWW::Mechanize;
 use Template;
 use XML::LibXML;
 use String::Random;
+use Data::Dumper;
 __PACKAGE__->mk_accessors( qw(test tests stash ua tt base_url) );
 
 sub new {
@@ -24,7 +25,12 @@ sub add_response {
   my $response = shift;
   my $document;
   if ($response->header('Content-Type') =~ /\bxml\b/) {
-    $document = XML::LibXML->load_xml(string => $response->content);
+    eval {
+      $document = XML::LibXML->load_xml(string => $response->decoded_content);
+    };
+    if ($@) {
+      die ("Error parsing response " . $response->request->uri . ": " . $@ . " $Test::Rest::where");
+    }
   }
   else {
     $document = XML::LibXML::Document->new;
@@ -41,9 +47,12 @@ sub expand_string {
   my $self = shift;
   my $string = shift;
   my $output;
-  $self->stash->{c} = $self;
-  $self->tt->process(\$string, $self->stash, \$output) || die $self->tt->error(), "\n";
-  delete $self->stash->{c};
+  $self->stash->{test} = $self;
+  $string =~ s/\{([^{}]*?)\}/[% $1 %]/misg;
+  $string =~ s/\{\{(.*?)\}\}/{$1}/misg;
+  $string =~ s/\$\((.*?)\)/$self->xpath($1)/misge;
+  $self->tt->process(\$string, $self->stash, \$output) || die ($self->tt->error() . " for template '$string'", "\n");
+  delete $self->stash->{test};
   return $output;
 }
 
@@ -63,6 +72,19 @@ sub random {
   my $n = shift || 8; 
   my $random = new String::Random;
   return $random->randregex('[A-Za-z]{'.$n.'}');
+}
+
+sub xpath {
+  my $self = shift;
+  my $xpath = shift;
+  my @node = defined($self->stash->{document}->documentElement) ?
+    $self->stash->{document}->documentElement->findnodes($xpath) : ();
+  if (@node) {
+    return $node[0]->nodeType == XML_ELEMENT_NODE ? $node[0]->textContent : $node[0]->nodeValue;
+  }
+  else {
+    return '';
+  }
 }
 
 1;

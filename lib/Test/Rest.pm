@@ -7,8 +7,9 @@ use Test::Rest::Commands;
 use Test::Rest::Context;
 use URI;
 use Test::More;
+use Data::Dumper;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 =head1 NAME
 
@@ -39,27 +40,27 @@ Here is an example test description file:
     <get>user/login</get>
     <submit_form>
       <with_fields>
-        <name>admin</name>
-        <pass>admin</pass>
+        <name>myname</name>
+        <pass>mypass</pass>
       </with_fields>
     </submit_form>
-    <is the="$response.code">200</is> 
-    <set name="random" value="$c.random"/>
-    <set name="mail" value="test+[% random %]@example.com"/>
-    <set name="pass" value="$random"/>
+    <is the="{response.code}">200</is> 
+    <set name="random" value="{test.random}"/>
+    <set name="mail" value="test+{random}@example.com"/>
+    <set name="pass" value="{random}"/>
     <post to="rest/user">
       <Content>
         <user>
           <firstname>Testy</firstname>
           <lastname>McTester</lastname>
-          <mail>[% mail %]</mail>
-          <pass>[% pass %]</pass>
+          <mail>{mail}</mail>
+          <pass>{pass}</pass>
         </user>
       </Content>
     </post>
-    <is the="$response.code">200</is> 
-    <set name="uid" value="#id"/>
-    <diag>Created [% uid %]</diag>
+    <is the="{response.code}">200</is> 
+    <set name="uid" value="$(id)"/>
+    <diag>Created {uid}</diag>
   </tests>
 
 =over
@@ -76,7 +77,7 @@ Methods like 'get', 'post', and 'submit_form' map to the equivalent methods of L
 
 =item * 
 
-The default user agent is L<WWW::Mechanize>.  Cookies/sessions are stored between requests.
+The default user agent is L<WWW::Mechanize>.  Cookies/sessions are stored between requests, and are kept for current test file.
 
 =item * 
 
@@ -90,6 +91,10 @@ Template::Toolkit is used to expand template variables.  The template stash (var
 
 The most recent L<HTTP::Response> is stored in the stash via the key 'response'.  If the response type is an XML document, the response document is automatically parsed and available to future tests/commands via XPath, and via the stash key 'document'.  The whole history of responses and documents are available via the stash keys 'responses' and 'documents' respectively.
 
+=item * 
+
+A jQuery/XPath-like template variable syntax is available for referencing parts of the last received document.  E.g. to see the href of the first anchor tag, you would use $(a[1]/@href)
+
 =back
 
 =head1 COMMANDS
@@ -98,18 +103,14 @@ TODO
 
 =cut
 
+use vars qw/$file $line $where/;
+
 sub new {
   my $proto = shift;
   my $class = ref $proto || $proto;
   my %opts = @_;
   return bless \%opts, $class;
 }
-
-=head2 $tests->run_dir($dir)
-
-Scan directory for test description files and run them.
-
-=cut
 
 sub run {
   my $self = shift;
@@ -120,7 +121,7 @@ sub run {
     croak "Directory $dir not found" unless -d $dir;
     opendir(my $dh, $dir) || croak "can't opendir $dir: $!";
     while (my $t = readdir($dh)) {
-      next if $t =~ /^\./ or !-f "$dir/$t";
+      next unless $t =~ /\.xml$/;
       $self->run_test_file("$dir/$t");
     }
     closedir $dh;
@@ -132,6 +133,25 @@ sub run {
     }
   }
   done_testing();
+}
+
+sub run_test_file {
+  my $self = shift;
+  my $filename = shift;
+  $Test::Rest::file = $filename;
+  my $doc = XML::LibXML->load_xml(location => $filename, line_numbers => 1);
+  diag("Loaded $filename");
+  my $commands = Test::Rest::Commands->new;
+  my $context = Test::Rest::Context->new(tests => $doc, base_url => $self->{base_url}, stash => {%{$self->{stash}}});
+  foreach my $child ($doc->documentElement->childNodes) {
+    next unless $child->nodeType == XML_ELEMENT_NODE;
+    my $cmd = $child->localname;
+    $Test::Rest::line = $child->line_number;
+    $Test::Rest::where = "at $Test::Rest::file line $Test::Rest::line";
+    croak "Unsupported command '$cmd' $Test::Rest::where" unless $commands->can($cmd);
+    $context->test($child);
+    $commands->$cmd($context);
+  }
 }
 
 =head1 AUTHOR
@@ -171,7 +191,6 @@ automatically be notified of progress on your bug as I make changes.
 You can find documentation for this module with the perldoc command.
 
     perldoc Test::Rest
-
 
 You can also look for information at:
 
